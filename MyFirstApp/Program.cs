@@ -1,5 +1,8 @@
 // C# 9 支持的顶层语法, 会编译后自动加上main方法
 
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Primitives;
+
 var builder = WebApplication.CreateBuilder(args);// 加载配置, 环境, 默认服务
 var app = builder.Build();
 
@@ -13,6 +16,18 @@ app.Run(async (HttpContext httpContext) =>
     {
         if(!string.IsNullOrEmpty(httpContext.Request.QueryString.Value))
             Console.WriteLine("Request.Query: " + httpContext.Request.QueryString.Value);
+    }
+    if(httpContext.Request.Method == "POST")
+    {
+        StreamReader streamReader = new StreamReader(httpContext.Request.Body);
+        string body = await streamReader.ReadToEndAsync();
+
+        Dictionary<string, StringValues> dictionary = QueryHelpers.ParseQuery(body);// StringValues 可以存储多个 string
+        if(dictionary != null && dictionary.ContainsKey("firstName"))
+        {
+            string firstName = string.Join(",", dictionary["firstName"]);
+            Console.WriteLine("Request Body: " + firstName);
+        }
     }
 
     // 响应头
