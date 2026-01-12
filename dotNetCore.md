@@ -106,3 +106,118 @@ Reverse Proxy Server: IIS, Nginx, Apache
 }
 ```
 
+
+
+## 中间件
+
+中间件是被组装到应用请求管道中用于处理请求和响应的组件, 可以想象为一组方法每当收到请求时它们按顺序依次执行, 在Asp.Net Core中这类方法被称为中间件. 例如收到请求后第一个中间件开始执行, 然后是第二个, 第三个, 以此类推, 在所有中间件执行完成后, 最终响应返回给浏览器. 中间件按顺序链接在一起, 按照添加的顺序依次执行, 最初应用管道是空的, 你将一个接一个的添加的中间件, 每个中间件只执行单一操作, 这意味着我们遵循了单一职责原则.
+
+中间件有两种实现方式
+
+* 单个匿名方法 或 Lambda表达式
+* 完整的实现类
+
+并非每个中间都必须将请求转发到下一个中间件, 这种中间件被称为**终端中间件** 或 **短路中间件**
+
+```C#
+// 使用Run方法创建中间件(短路中间件)
+app.Run(async (HttpContext context) =>
+{
+    await context.Response.WriteAsync("Hello");
+});
+
+// 要记住, app.Run()方法不会将请求转发到其后的任何后续中间件
+app.Run(async (HttpContext context) =>
+{
+    await context.Response.WriteAsync("Hello Again");// 不会执行
+});
+```
+
+问: 看了一下, `app.Run`需要传入的代理方法, 类型为`public delegate Task RequestDelegate(HttpContext context); `那么就是 一个输入参数`HttpContext`, 一个返回值 `Task`, 但是上述代码并没有return 这是为什么?
+
+答: 在 C# 的异步方法中，即使没有显式使用 `return` 语句，方法仍然可以返回 `Task`，这是因为编译器会自动为 `async` 方法生成状态机，并在方法末尾隐式返回 `Task.CompletedTask`（当方法无返回值时）
+
+
+
+### Lambda实现中间件
+
+执行顺序为 Hello, next()   =>   Hello Again, next()   =>   Hello Again too   =>   回到第二个中间件(但第二个中间件 next()后没有方法,相当于第二个中间件执行完了)   =>   回到第一个中间件(也执行完了), 就会响应数据
+
+```C#
+// 顺序不能乱, 第一个就是第一个被调用的, 第二个就是第二个
+// 使用Use方法创建中间件
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    await context.Response.WriteAsync("Hello");
+    await next(context);// 必须将 context 作为参数传递给下一个中间件
+});
+
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    await context.Response.WriteAsync("Hello Again");
+    await next(context);// 继续调用下一个中间件 (可以选择性的调用, 不调用就不会执行后续中间件, 可以提前响应)
+});
+
+app.Run(async (HttpContext context) =>
+{
+    await context.Response.WriteAsync("Hello Again too");
+});
+```
+
+**Tips: 多个中间件的设计是为了每个中间件只负责单一职责, 例: 一个中间件负责处理https重定向, 一个中间件负责处理身份验证**
+
+
+
+### 自定义中间件
+
+1. 实现`IMiddleware`接口
+2. 注册中间件`builder.Services.AddTransient<MyCustomerMiddleware>();`
+3. 使用中间件`app.UseMiddleware<MyCustomerMiddleware>();`
+
+```c#
+using _01_MiddleWareExample.CustomerMiddleware;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddTransient<MyCustomerMiddleware>();// 注册中间件服务类 (AddTransient会将MyCustomerMiddleware依赖注入,获取服务)
+var app = builder.Build();// 程序构建器对象, 用于配置和创建中间件
+
+// 顺序不能乱, 第一个就是第一个被调用的, 第二个就是第二个
+// 使用Use方法创建中间件
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    await context.Response.WriteAsync("Hello");
+    await next(context);// 必须将 context 作为参数传递给下一个中间件
+});
+
+app.UseMiddleware<MyCustomerMiddleware>();// 自定义中间件
+
+app.Run(async (HttpContext context) =>
+{
+    await context.Response.WriteAsync("Hello Again too");
+});
+// HelloMy Customer Middleware - StartsHello Again tooMy Customer Middleware - Ends
+
+app.Run();
+```
+
+```c#
+
+namespace _01_MiddleWareExample.CustomerMiddleware
+{
+    /// <summary>
+    /// 自定义中间件
+    ///     当中间件逻辑较多时, 不方便使用 app.Run() app.Use(), 实现 IMiddleware 将逻辑抽离为单独一个类来实现
+    /// </summary>
+    public class MyCustomerMiddleware : IMiddleware
+    {
+        public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+        {
+            await context.Response.WriteAsync("My Customer Middleware - Starts");
+            await next(context);
+            await context.Response.WriteAsync("My Customer Middleware - Ends");
+        }
+    }
+}
+
+```
+
