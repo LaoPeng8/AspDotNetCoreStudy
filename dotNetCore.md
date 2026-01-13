@@ -221,3 +221,156 @@ namespace _01_MiddleWareExample.CustomerMiddleware
 
 ```
 
+
+
+### 自定义中间件扩展
+
+实际项目中, 一般会通过扩展方法来调用自定义中间件. 这是更正式和快捷的方式调用自定义中间件
+
+在实际项目中,创建扩展方法与创建自定义中间件一起是一种惯例和通用做法
+
+```C#
+// 使用扩展方法代替直接使用 UseMiddleware<MyCustomerMiddleware>();
+app.UseMyCustomMiddleware();
+
+//app.UseMiddleware<MyCustomerMiddleware>();// 自定义中间件
+```
+
+```C#
+
+namespace _01_MiddleWareExample.CustomerMiddleware
+{
+    /// <summary>
+    /// 自定义中间件
+    ///     当中间件逻辑较多时, 不方便使用 app.Run() app.Use(), 实现 IMiddleware 将逻辑抽离为单独一个类来实现
+    /// </summary>
+    public class MyCustomerMiddleware : IMiddleware
+    {
+        public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+        {
+            await context.Response.WriteAsync("My Customer Middleware - Starts");
+            await next(context);
+            await context.Response.WriteAsync("My Customer Middleware - Ends");
+        }
+    }
+
+
+    /// <summary>
+    /// 扩展方法
+    /// 
+    /// 在Program.cs中直接调用 app.UseMiddleware<MyCustomerMiddleware>(); 不太优雅
+    /// 一般会通过扩展方法来使用, 例直接调用 app.UseMyCustomMiddleware();// 使用扩展方法代替直接使用 UseMiddleware<MyCustomerMiddleware>();
+    /// 这是更正式和快捷的方式调用自定义中间件, 在实际项目中,创建扩展方法与创建自定义中间件一起是一种惯例和通用做法
+    /// 
+    /// 因为 var app = builder.Build(); 返回的 WebApplication 对象
+    /// WebApplication 实现至 IApplicationBuilder 接口, 所以我们一般给 IApplicationBuilder 类型注册扩容方法
+    /// </summary>
+    public static class CustomerMiddlewareExtension
+    {
+        // 命名遵循规范 以 Use 开头 Middleware表示中间件
+        public static IApplicationBuilder UseMyCustomMiddleware(this IApplicationBuilder app)
+        {
+            return app.UseMiddleware<MyCustomerMiddleware>();
+        }
+    }
+}
+```
+
+
+
+### 自定义常规中间件
+
+直接添加 "中间件"类, 会自动生成模板, 通过构造函数传入 ReqeustDelegate 即下一个中间件
+
+1. 添加"中间件类", 在 _next() 方法前后添加自定义逻辑
+2. 在`Program.cs`中直接调用 使用中间件`app.UseHelloCustomerMiddleware();`
+3. 省去了注册中间件的过程(即自定义中间件的第2步)
+4. Tips: 使用 IMiddleware 是老方式  .Net Core 6后推荐此种方式
+
+```c#
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using System.Threading.Tasks;
+
+namespace _01_MiddleWareExample.CustomerMiddleware
+{
+    // 可以直接添加 "中间件"类, 会自动生成模板, 通过构造函数传入 RequestDelegate 即下一个中间件
+    // You may need to install the Microsoft.AspNetCore.Http.Abstractions package into your project
+    public class HelloCustomerMiddleware
+    {
+        private readonly RequestDelegate _next;
+
+        public HelloCustomerMiddleware(RequestDelegate next)
+        {
+            _next = next;
+        }
+
+        public async Task Invoke(HttpContext httpContext)
+        {
+            // before logic
+            if(httpContext.Request.Query.ContainsKey("firstName") && httpContext.Request.Query.ContainsKey("lastName"))
+            {
+                Console.WriteLine("firstName = " + httpContext.Request.Query["firstName"]);
+                Console.WriteLine("lastName = " + httpContext.Request.Query["lastName"]);
+
+                await httpContext.Response.WriteAsync("firstName = " + httpContext.Request.Query["firstName"]);
+                await httpContext.Response.WriteAsync("lastName = " + httpContext.Request.Query["lastName"]);
+            }
+
+            await _next(httpContext);
+            //return _next(httpContext); 使用 await 方法需要标记为 async, 而async后就不能 return
+            // later logic
+        }
+    }
+
+    // 扩展方法 也是自动生成的
+    // Extension method used to add the middleware to the HTTP request pipeline.
+    public static class HelloCustomerMiddlewareExtensions
+    {
+        public static IApplicationBuilder UseHelloCustomerMiddleware(this IApplicationBuilder builder)
+        {
+            return builder.UseMiddleware<HelloCustomerMiddleware>();
+        }
+    }
+}
+
+```
+
+
+
+### 正确的中间件顺序
+
+大多数常见项目中, 需要使用一组特定的预定义中间件, Microsoft建议按照此处所示的顺序使用中间件, 防止出现意外行为
+
+![](./img/2.png)
+
+
+
+### UseWhen
+
+当满足某些条件时才会执行指定中间件此处仅使用 `app.Use`演示, 实际上仍然可以使用其他自定义中间件
+
+我想之所以使用 `UseWhen` 而不是 `if`直接判断, 应该是`UseWhen`内可以获取到HttpContext对象(Request, Response)等, 直接使用`if`就不行
+
+```c#
+// 当 context.Request.Query.ContainsKey("Hello") 为true时
+// 才会执行第二个Lambda即 使用Use方法创建的中间件
+app.UseWhen(
+    (context) =>
+    {
+        return context.Request.Query.ContainsKey("Hello");
+    },
+    (app) =>
+    {
+        app.Use(async (context, next) =>
+        {
+            await context.Response.WriteAsync("Hello from Middleware branch");
+            await next();
+        });
+    }
+);
+```
+
+
+
+## 路由 Routing

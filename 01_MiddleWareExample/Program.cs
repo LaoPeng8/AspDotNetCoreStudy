@@ -34,6 +34,25 @@ app.UseMyCustomMiddleware();// 使用扩展方法代替直接使用 UseMiddleware<MyCustomer
 //    await next(context);// 继续调用下一个中间件 (可以选择性的调用, 不调用就不会执行后续中间件, 可以提前响应)
 //});
 
+app.UseHelloCustomerMiddleware();
+
+// 当 context.Request.Query.ContainsKey("Hello") 为true时
+// 才会执行第二个Lambda即 使用Use方法创建的中间件
+app.UseWhen(
+    (context) =>
+    {
+        return context.Request.Query.ContainsKey("Hello");
+    },
+    (app) =>
+    {
+        app.Use(async (context, next) =>
+        {
+            await context.Response.WriteAsync("Hello from Middleware branch");
+            await next();
+        });
+    }
+);
+
 app.Run(async (HttpContext context) =>
 {
     await context.Response.WriteAsync("Hello Again too");
