@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="01_MiddleWareExample/01_MiddleWareExample.csproj" Id="14347852-01de-400e-ac6a-f0d9a9aab666" />
+  <Project Path="02_RoutingExample/02_RoutingExample.csproj" Id="fd4ebd57-65c1-4116-978b-2ec240236827" />
   <Project Path="MyFirstApp/MyFirstApp.csproj" />
 </Solution>
