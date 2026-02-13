@@ -471,3 +471,61 @@ app.Use(async (context, next) =>
 
 
 
+### 路由参数
+
+当请求 /files/a 或 files/nginx. 或 files/nginxtxt 等 匹配不上路由字面量时, 则请求不会到达该接口, 在此处会由短路中间件Run捕获到
+
+```c#
+endpoints.Map("files/{fileName}.{extension}", async (HttpContext context) =>
+{
+    object fileNameObj = context.Request.RouteValues["fileName"];
+    object extensionObj = context.Request.RouteValues["extension"];
+
+    string fileName = Convert.ToString(fileNameObj);
+    string extension = Convert.ToString(extensionObj);
+
+    await context.Response.WriteAsync($"你请求了文件: {fileName}.{extension}");
+});
+```
+
+
+
+**路由参数可以设置默认值**
+
+可以为路由值通过类似给方法参数设置默认值的方式, 来给路由参数设置默认值, 当没有输入该参数时会有一个默认值此处为harsha
+
+```
+endpoints.Map("employee/profile/{EmployeeName=harsha}", async (HttpContext context) =>
+{
+    // 获取路由值时不区分大小写
+    string employeeName = Convert.ToString(context.Request.RouteValues["employeename"]);
+    await context.Response.WriteAsync($"In Employee Profile - {employeeName}");
+});
+
+// 路由参数默认值的实际用途
+endpoints.Map("/products/details/{id=1}", async context =>
+{
+    int id = Convert.ToInt32(context.Request.RouteValues["id"]);
+    await context.Response.WriteAsync($"Products details - {id}");
+});
+```
+
+
+
+**可选的路由参数**
+
+```C#
+// 路由参数可以为空
+endpoints.Map("/saleOrder/info/{id?}", async context =>
+{
+    if (!context.Request.RouteValues.ContainsKey("id"))
+    {
+        await context.Response.WriteAsync("缺少参数 id");
+        return;
+    }
+
+    int id = Convert.ToInt32(context.Request.RouteValues["id"]);
+    await context.Response.WriteAsync($"saleOrder info - {id}");
+});
+```
+
