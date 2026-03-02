@@ -529,3 +529,124 @@ endpoints.Map("/saleOrder/info/{id?}", async context =>
 });
 ```
 
+
+
+### 路由约束
+
+`/saleOrder/details/{id}`当请求这样这个路由时, id参数默认是可以接收任意类型的值, **路由约束**可以约束其接收的值的类 通过 `{id:int}` 即约束仅接收int值. `:约束类型` 并不是所有基础数据类型.
+
+但是一般来说, 根据Microsoft文档, 你不应该用路由约束来验证值 (在实际项目中不要使用约束来验证值), 编写代码的更好方式是, 允许无效值进入路由, 然后在代码中使用if验证它们, 如果发现无效可以给出适当的响应 例: `if(string.IsNullOrWhiteSpace(v)) { return "id 不能为空"}`
+
+* int
+* bool
+* datetime `yyyy-MM-dd hh:mm:ss tt` and `MM/dd/yyyy hh:mm:ss tt`
+* decimal
+* long
+* guid
+* minlength `{username:minlength(4)}` 指定长度最少为x
+* maxlength `{username:maxlength(7)}` 指定长度最长为x (需要注意可以有多个约束) `{username:minlength(4):maxlength(7)}`
+* length `{username:length(4,7)}` 指定长度为最短4最长7
+* length `{tin:length(9)}` 只接收指定长度
+* min `age:min(18)` 最小值为 18
+* max `age:max(100)` 最大值为 100 `age:min(18):max(100)` 仅接收18~100
+* range `age:range(18,1000)` 仅接收18~1000
+* alpha `{username:alpha}` 仅接收 a-z 和 A-Z  它仅会接收字母 而不是字母以外的其他内容
+* regex `` 正则表达式
+
+```c#
+// 默认情况下, 参数会接收任何类型的值,字母,数字,日期,布尔
+// 使用 :具体类型, 如 id:int 表示仅接收 32位数值
+// 如果请求时参数类型不一致(/saleOrder/details/abc)则不会进入该路由, 如果所有路由均不匹配则会进入管道末尾的 短路中间件app.Run()
+endpoints.Map("/saleOrder/details/{id:int?}", async context =>
+{
+    if (!context.Request.RouteValues.ContainsKey("id"))
+    {
+        await context.Response.WriteAsync("缺少参数 id");
+        return;
+    }
+
+    int id = Convert.ToInt32(context.Request.RouteValues["id"]);
+    await context.Response.WriteAsync($"saleOrder details - {id}");
+});
+
+// 仅接收日期值参数
+endpoints.Map("/daily-digest-report/{reportdate:datetime}", async context =>
+{
+    DateTime reportDate = Convert.ToDateTime(context.Request.RouteValues["reportdate"]);
+    await context.Response.WriteAsync($"In daily-digest-report - {reportDate.ToShortDateString()}");
+});
+
+// {year:int:min(1900)} 接收int型且最小值为1900及以上值 存入year
+// {month:regex(^(apr|jul|oct|jan)$)} 正则约束, :regex() 内用 ^开头 $结尾 其中为正则表达式
+endpoints.Map("/sales-report/{year:int:min(1900)}/{month:regex(^(apr|jul|oct|jan)$)}", async context =>
+{
+    int year = Convert.ToInt32(context.Request.RouteValues["year"]);
+    string? month = Convert.ToString(context.Request.RouteValues["month"]);
+
+    await context.Response.WriteAsync($"sales report - {year}-{month}");
+});
+```
+
+
+
+### 自定义路由约束类
+
+ 当你需要创建,复杂/可重用的约束可以使用自定义约束
+
+1. 实现接口`IRouteConstraint`其类为自定义约束类
+2. 注册自定义约束类
+3. 在路由参数处使用 `endpoints.Map("/payment-report/{year:int:min(1900)}/{month:mymonths}"`
+
+```C#
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRouting(options =>
+{
+    options.ConstraintMap.Add("mymonths", typeof(MonthsCustomerConstraint));// 注册自定义约束类, "mymonths"为约束名称, typeof(实际约束类)
+});
+var app = builder.Build();
+```
+
+
+
+```C#
+using System.Text.RegularExpressions;
+
+namespace _02_RoutingExample.CustomerConstraint
+{
+    // 实现 IRouteConstraint 接口, 表示该类为自定义路由约束类
+    public class MonthsCustomerConstraint : IRouteConstraint
+    {
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="httpContext">请求上下文 可获取 request response</param>
+        /// <param name="route">请求的路由, 即约束应用的路由</param>
+        /// <param name="routeKey">路由key, 即 "/payment-report/{year:int:min(1900)}/{month:mymonths}" 中的 month 因此约束实际应用在month路由参数上</param>
+        /// <param name="values">路由值, 即 year mont等routeKey的键值对 例 [{year:2025},{month:one}]</param>
+        /// <param name="routeDirection"></param>
+        /// <returns></returns>
+        /// <exception cref="NotImplementedException"></exception>
+        public bool Match(HttpContext? httpContext, IRouter? route, string routeKey, RouteValueDictionary values, RouteDirection routeDirection)
+        {
+            // 如果字典中不包含 约束的路由key则相当于接口请求时没有输入, 则直接false
+            if(!values.ContainsKey(routeKey))
+            {
+                return false;
+            }
+
+            // 执行约束逻辑
+            Regex regex = new Regex("^(one|two|three|four)$");
+            string? monthValue = Convert.ToString(values[routeKey]);
+
+            if (regex.IsMatch(monthValue))
+            {
+                return true;
+            }
+
+            return false;
+        }
+    }
+}
+```
+
